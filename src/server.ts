@@ -131,6 +131,16 @@ const tools = [
     },
   },
   {
+    name: "export_handoff",
+    description:
+      "Export a Claude Code handoff bundle: all files under project/, chat transcripts under chats/, and a README/PROMPT telling a coding agent how to consume it. Use this (not plain export) when handing off to Claude Code.",
+    inputSchema: {
+      type: "object",
+      properties: { projectId: { type: "string" }, destDir: { type: "string" } },
+      required: ["projectId", "destDir"],
+    },
+  },
+  {
     name: "publish",
     description: "Publish the design system (make it shareable / consumable as a Skill).",
     inputSchema: { type: "object", properties: { projectId: { type: "string" } }, required: ["projectId"] },
@@ -376,6 +386,11 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
           await fs.writeFile(out, data);
         }
         return text(`exported ${files.length} files to ${a.destDir}`);
+      }
+      case "export_handoff": {
+        const a = ExportSchema.parse(rawArgs);
+        const r = await backend.exportHandoff(a.projectId, a.destDir);
+        return text(`handoff bundle written to ${r.dir} (${r.files} files, ${r.chats} chats)`);
       }
       case "publish": {
         const a = ProjectIdSchema.parse(rawArgs);

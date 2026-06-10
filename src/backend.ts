@@ -94,6 +94,8 @@ export interface DesignBackend {
   listFiles(projectId: string): Promise<FileEntry[]>;
   readFile(projectId: string, filePath: string): Promise<string>;
   readFileRaw(projectId: string, filePath: string): Promise<{ data: Buffer; contentType?: string }>;
+  /** Export all files plus a handoff bundle (README/PROMPT + chat transcripts). */
+  exportHandoff(projectId: string, destDir: string): Promise<{ files: number; chats: number; dir: string }>;
   searchFiles(projectId: string, pattern: string): Promise<GrepMatch[]>;
   writeFile(projectId: string, filePath: string, content: string): Promise<void>;
   editFile(projectId: string, filePath: string, oldString: string, newString: string): Promise<number>;

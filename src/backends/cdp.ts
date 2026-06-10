@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import fs from "node:fs/promises";
+import path from "node:path";
 import { type Browser, type BrowserContext, type Page } from "playwright";
 import type {
   DesignBackend,
@@ -349,6 +351,57 @@ export class CdpBackend implements DesignBackend {
     return data.toString("utf8");
   }
 
+  async exportHandoff(projectId: string, destDir: string): Promise<{ files: number; chats: number; dir: string }> {
+    const gp = await this.rpc.call<{ name?: string; type?: string; designSystems?: RpcBinding[] }>(
+      methods.getProject,
+      { projectId },
+    );
+    const name = gp.name ?? projectId;
+    const kind = gp.type === projectType.designSystem ? "design system" : "design project";
+
+    // 1) Raw files under project/ (fetched with bounded concurrency — big
+    // projects have hundreds of files and each read is a round-trip).
+    const files = await this.listFiles(projectId);
+    const projectDir = path.join(destDir, "project");
+    await mapLimit(files, 8, async (f) => {
+      const { data } = await this.readFileRaw(projectId, f.path);
+      const out = path.join(projectDir, f.path);
+      await fs.mkdir(path.dirname(out), { recursive: true });
+      await fs.writeFile(out, data);
+    });
+
+    // 2) Chat transcripts under chats/ (intent lives here)
+    const data = await this.getProjectData(projectId);
+    const chats = Object.values(data.chats ?? {});
+    if (chats.length) {
+      const chatsDir = path.join(destDir, "chats");
+      await fs.mkdir(chatsDir, { recursive: true });
+      chats.sort((a, b) => (a.lastOpened ?? "").localeCompare(b.lastOpened ?? ""));
+      let i = 0;
+      for (const c of chats) {
+        i += 1;
+        const slug = slugify((c.title ?? "chat").split("\n")[0]) || `chat-${i}`;
+        const file = path.join(chatsDir, `${String(i).padStart(2, "0")}-${slug}.md`);
+        await fs.writeFile(file, serializeChat(c));
+      }
+    }
+
+    // 3) Attached design systems (resolve names)
+    const bindings = gp.designSystems ?? [];
+    let dsList = "_None — generation uses the org default design system._";
+    if (bindings.length) {
+      const all = await this.rawListProjects();
+      const nameById = new Map(all.map((p) => [p.projectId, p.name]));
+      dsList = bindings.map((b) => `- ${nameById.get(b.dsProjectId) ?? b.dsProjectId} (\`${b.dsProjectId}\`)`).join("\n");
+    }
+
+    // 4) Handoff README/PROMPT
+    await fs.mkdir(destDir, { recursive: true });
+    await fs.writeFile(path.join(destDir, "README.md"), handoffReadme({ name, kind, projectId, files: files.length, chats: chats.length, dsList }));
+
+    return { files: files.length, chats: chats.length, dir: destDir };
+  }
+
   async publish(projectId: string): Promise<void> {
     await this.rpc.call(methods.setProjectPublished, { projectId, published: true });
   }
@@ -563,4 +616,87 @@ export function extractIdFromUrl(href: string): string {
   const m = href.match(/\/design\/p\/([A-Za-z0-9_-]+)/);
   if (!m) throw new Error(`Cannot extract projectId from URL: ${href}`);
   return m[1];
+}
+
+/** Run an async fn over items with bounded concurrency. */
+async function mapLimit<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
+  let i = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (i < items.length) {
+      const idx = i++;
+      await fn(items[idx]);
+    }
+  });
+  await Promise.all(workers);
+}
+
+function slugify(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 50);
+}
+
+interface ChatMsg {
+  role?: string;
+  content?: string;
+  authorName?: string;
+  timestamp?: string;
+  attachments?: { content?: string; name?: string; type?: string }[];
+}
+
+/** Render one conversation as a readable markdown transcript. */
+function serializeChat(c: { title?: string; created?: string; messages?: unknown[] }): string {
+  const msgs = (c.messages ?? []) as ChatMsg[];
+  const lines: string[] = [];
+  lines.push(`# ${(c.title ?? "Conversation").split("\n")[0]}`);
+  lines.push(`> ${c.created ?? ""} · ${msgs.length} message(s)\n`);
+  for (const m of msgs) {
+    const who = m.role === "assistant" ? "Claude" : m.authorName || m.role || "user";
+    lines.push(`\n## ${who}${m.timestamp ? ` · ${m.timestamp}` : ""}\n`);
+    if (m.content) lines.push(m.content.trim());
+    for (const a of m.attachments ?? []) {
+      if (a.content && /^<system-info/.test(a.content)) continue; // skip noise
+      const label = a.name ? `attachment: ${a.name}${a.type ? ` (${a.type})` : ""}` : "attachment";
+      lines.push(`\n<details><summary>${label}</summary>\n\n${(a.content ?? "").slice(0, 20000)}\n\n</details>`);
+    }
+  }
+  return lines.join("\n") + "\n";
+}
+
+function handoffReadme(o: {
+  name: string; kind: string; projectId: string; files: number; chats: number; dsList: string;
+}): string {
+  return `# CODING AGENTS: READ THIS FIRST
+
+This is a Claude Design handoff bundle for **${o.name}** (${o.kind}, \`${o.projectId}\`).
+It contains ${o.files} generated file(s) under \`project/\` and ${o.chats} conversation
+transcript(s) under \`chats/\`.
+
+## How to consume this bundle
+
+1. **Read \`chats/\` first.** The design intent, decisions, and constraints live in the
+   conversation transcripts — not just the code. Read them in order before touching files.
+2. **Then read \`project/\`** starting from any \`README.md\` / \`SKILL.md\`, then the token
+   files (\`system/tokens.css\` / \`colors_and_type.css\`) and follow imports outward.
+3. **Recreate in the target stack** (React/TS/Tailwind/etc.) — do NOT copy the prototype's
+   file structure or Babel-in-browser JSX verbatim. The prototype is reference, not source.
+4. **Read the HTML/CSS directly.** Do not screenshot to "see" the design — the truth is in
+   the markup and tokens.
+5. **Consume SEMANTIC tokens only** (e.g. \`--background\`, \`--primary\`). Never hardcode hex
+   and never reference a primitive (\`--p-*\`) directly in a component.
+
+## Attached design systems
+
+${o.dsList}
+
+## Turn the tokens into a real package
+
+To scaffold a maintainable \`packages/ui\` (DTCG tokens → Style Dictionary → Tailwind v4
+\`@theme\`) from \`project/\`, run the generator that ships with the claude-design MCP:
+
+\`\`\`bash
+pnpm run scaffold:ui -- --src "$(pwd)/project" --out "<repo>/packages"
+\`\`\`
+
+That emits clean tokens + a package skeleton; port the prototype components from
+\`project/\` into \`packages/ui/src/components/\` using the generated semantic tokens.
+`;
 }
