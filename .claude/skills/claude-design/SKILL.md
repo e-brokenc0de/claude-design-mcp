@@ -57,10 +57,10 @@ that burns turns. Two options:
   `{"status":"timeout"}` if it never settles). Kick it off right after the
   generate/send_message call. Flags: `--timeout`, `--quiet`, `--interval` (ms).
 
-Pattern: call `generate`/`send_message` (returns once started) → start `watch:status` in
-the background → when its completion notification arrives, call `list_files` / `read_file`
-/ `export`. `iterate` and `send_message` already block until settled, so the watcher is
-mainly for `generate` (which returns early) or when you want to stay responsive meanwhile.
+Pattern: call `generate` / `iterate` / `send_message` (all return once started) → start
+`watch:status` in the background → when its completion notification arrives, call
+`list_files` / `read_file` / `export`. None of these tools block until the generation
+finishes, so always confirm with `get_status` or the watcher before reading output.
 
 ## Core workflows
 
@@ -98,9 +98,13 @@ default design system automatically.
 ### 3. Revise / iterate (send a new prompt)
 
 ```
-iterate({ projectId, prompt })                          — sends to the active chat, waits for the run + verifier to settle
-send_message({ projectId, prompt, conversationId? })    — same, but can target a specific conversation
+iterate({ projectId, prompt })                          — sends to the active chat; returns once STARTED (non-blocking)
+send_message({ projectId, prompt, conversationId? })    — same; can target a specific conversation
 ```
+
+Both are **non-blocking** — they return in seconds once generation starts. Then poll
+`get_status` until `ready`, or run `watch:status` in the background (see above) before
+reading/exporting.
 
 Conversations are separate chat threads inside one project. To work across threads:
 

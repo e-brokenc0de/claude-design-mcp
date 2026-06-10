@@ -308,8 +308,9 @@ export class CdpBackend implements DesignBackend {
     if (conversationId) await this.switchConversation(projectId, conversationId);
     const page = await this.projectPage(projectId);
     await this.sendMessage(page, prompt);
+    // Non-blocking: return once the run has STARTED. Poll get_status or use
+    // `pnpm run watch:status` to know when it settles.
     await this.waitStarted(projectId);
-    await this.waitSettled(projectId, page);
   }
 
   async listFiles(projectId: string): Promise<FileEntry[]> {
@@ -492,22 +493,6 @@ export class CdpBackend implements DesignBackend {
     return false;
   }
 
-  /** Wait until the turn + verifier settle (RPC quiet for a window), or timeout. */
-  private async waitSettled(projectId: string, page: Page, timeoutMs = 15 * 60_000): Promise<void> {
-    const deadline = Date.now() + timeoutMs;
-    let quiet = 0;
-    while (Date.now() < deadline) {
-      const busy = this.isBusy(projectId) || (await this.verifierRunning(page));
-      if (busy) {
-        quiet = 0;
-      } else {
-        quiet += 1;
-        if (quiet >= 3) return; // ~9s of quiet → settled
-      }
-      await sleep(3000);
-    }
-  }
-
   async generate(projectId: string): Promise<void> {
     const ref = this.registry.get(projectId);
     const brief = ref?.brief;
@@ -526,8 +511,9 @@ export class CdpBackend implements DesignBackend {
   async iterate(projectId: string, prompt: string): Promise<void> {
     const page = await this.projectPage(projectId);
     await this.sendMessage(page, prompt);
+    // Non-blocking: return once the run has STARTED. Poll get_status or use
+    // `pnpm run watch:status` to know when it settles.
     await this.waitStarted(projectId);
-    await this.waitSettled(projectId, page);
   }
 
   async getStatus(projectId: string): Promise<{ status: ProjectStatus; detail?: string }> {

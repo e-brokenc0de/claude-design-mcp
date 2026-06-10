@@ -11,8 +11,8 @@ are UUIDs returned by create/list tools.
 | `create_design_project` | `{ name, brief?, designSystemIds?, designComponents? }` | `{ projectId, url }`. Binds design systems if given (`designComponents` defaults true when bound). |
 | `generate` | `{ projectId }` | Returns once generation has STARTED (~5 min total for systems). Poll `get_status`. |
 | `get_status` | `{ projectId }` | `{ status: "generating"|"ready"|"error"|"draft", detail? }`. |
-| `iterate` | `{ projectId, prompt }` | Sends to active chat; waits for run + self-verifier to settle. |
-| `send_message` | `{ projectId, prompt, conversationId? }` | Like iterate; targets a specific conversation when `conversationId` given. |
+| `iterate` | `{ projectId, prompt }` | Sends to active chat. Non-blocking: returns once STARTED; poll `get_status` / `watch:status`. |
+| `send_message` | `{ projectId, prompt, conversationId? }` | Like iterate (non-blocking); targets a specific conversation when `conversationId` given. |
 
 ## Conversations
 

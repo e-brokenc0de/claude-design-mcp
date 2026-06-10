@@ -26,7 +26,7 @@ async function ensureBackend(): Promise<void> {
 const SERVER_INSTRUCTIONS = [
   "Drives Claude Design (claude.ai/design): create design systems AND design projects, generate, iterate/revise, inspect, edit, and export.",
   "Design systems: create_design_system. Design projects (screens/apps): create_design_project, optionally with designSystemIds to reuse a system's tokens/components; manage bindings with attach_design_system / detach_design_system / refresh_design_system.",
-  "Generation is asynchronous: after create, call generate, then poll get_status until 'ready' before reading/exporting. Revise with send_message (optionally target a conversationId); list_conversations / new_conversation manage chats.",
+  "Generation is asynchronous and tools are NON-BLOCKING: generate/iterate/send_message return once the run has STARTED (~seconds). Then poll get_status until 'ready' (or run `pnpm run watch:status` in the background for an auto wake-up) before reading/exporting. Revise with send_message (optionally target a conversationId); list_conversations / new_conversation manage chats.",
   "Files: list_files, read_file, export (to a local dir), plus search_files (grep), write_file, edit_file, delete_file for direct edits.",
   "Requires a logged-in CDP Chrome; if a tool returns NOT_AUTHED, run `pnpm run chrome:cdp` and log in.",
 ].join("\n");
@@ -99,7 +99,7 @@ const tools = [
   {
     name: "iterate",
     description:
-      "Send a chat message to iterate on the design. Waits for the run + self-verifier to settle before returning.",
+      "Send a chat message to iterate on the design. Non-blocking: returns once the run has STARTED (~seconds). Poll `get_status` until 'ready', or run `pnpm run watch:status` in the background for an auto wake-up.",
     inputSchema: {
       type: "object",
       properties: { projectId: { type: "string" }, prompt: { type: "string" } },
@@ -226,7 +226,7 @@ const tools = [
   {
     name: "send_message",
     description:
-      "Send a prompt / revision to the project chat and wait for the run + verifier to settle. Optionally target a specific conversation by conversationId.",
+      "Send a prompt / revision to the project chat. Non-blocking: returns once the run has STARTED. Optionally target a specific conversation by conversationId. Poll `get_status` (or `pnpm run watch:status`) for completion.",
     inputSchema: {
       type: "object",
       properties: {
@@ -363,7 +363,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       case "iterate": {
         const a = IterateSchema.parse(rawArgs);
         await backend.iterate(a.projectId, a.prompt);
-        return text("iteration_complete");
+        return text("iteration_started — generating; poll get_status or run `pnpm run watch:status`");
       }
       case "list_files": {
         const a = ProjectIdSchema.parse(rawArgs);
@@ -448,7 +448,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       case "send_message": {
         const a = SendMessageSchema.parse(rawArgs);
         await backend.sendMessageTool(a.projectId, a.prompt, a.conversationId);
-        return text("message_complete");
+        return text("message_sent — generating; poll get_status or run `pnpm run watch:status`");
       }
       case "search_files": {
         const a = SearchSchema.parse(rawArgs);
