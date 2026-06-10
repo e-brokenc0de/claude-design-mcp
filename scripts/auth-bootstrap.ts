@@ -9,21 +9,18 @@
  * Usage:
  *   pnpm run auth:bootstrap
  */
-import { chromium, type BrowserContext } from "playwright";
-import fs from "node:fs/promises";
-import path from "node:path";
+import { type BrowserContext } from "playwright";
+import { launchClaudeBrowserContext, profileModeDescription, configuredProfileDir } from "../src/chrome-profile.js";
 
-const PROFILE_DIR = path.resolve(process.env.CLAUDE_DESIGN_PROFILE_DIR ?? "./.auth/profile");
 const BASE = process.env.CLAUDE_DESIGN_BASE_URL ?? "https://claude.ai/design";
 
 async function main() {
-  await fs.mkdir(PROFILE_DIR, { recursive: true });
-  console.log(`[auth] launching persistent profile at: ${PROFILE_DIR}`);
+  console.log(`[auth] launching ${profileModeDescription()}`);
   console.log(`[auth] log into claude.ai in the opened window.`);
   console.log(`[auth] this script will auto-detect once you reach ${BASE}.`);
   console.log(`[auth] (or close the browser window to abort)`);
 
-  const ctx = await chromium.launchPersistentContext(PROFILE_DIR, {
+  const ctx = await launchClaudeBrowserContext({
     headless: false,
     viewport: { width: 1440, height: 900 },
   });
@@ -58,7 +55,7 @@ async function main() {
         await verify.close().catch(() => {});
         if (!vu.includes("/login") && !vu.includes("/auth")) {
           console.log(`[auth] ✅ authenticated. Verified URL: ${vu}`);
-          console.log(`[auth] profile saved at ${PROFILE_DIR}. The MCP server will reuse it headless.`);
+          console.log(`[auth] profile verified at ${configuredProfileDir()}. The MCP server will reuse it headless.`);
           await safeClose(ctx);
           return;
         }

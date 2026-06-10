@@ -14,6 +14,7 @@ browser-profile/
 # Recon artifacts (HARs can leak cookies)
 recon/*.har
 recon/*.json
+recon/*.jsonl
 !recon/.gitkeep
 
 # Project state cache

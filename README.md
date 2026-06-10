@@ -25,13 +25,16 @@ An MCP server that drives [Claude Design](https://claude.ai/design) — Anthropi
 pnpm install
 pnpm exec playwright install chromium
 
-# One-time headed login — opens a Chromium window, you log into claude.ai,
-# press ENTER in the terminal to save the auth profile. Reused headless after.
+# Option A (recommended when Cloudflare blocks Playwright's bundled browser):
+# reuse your real Google Chrome Default profile/cookies. Close regular Chrome first.
+CLAUDE_DESIGN_USE_SYSTEM_CHROME=1 pnpm run auth:bootstrap
+
+# Option B: dedicated Chromium profile. You log into claude.ai once; reused headless after.
 pnpm run auth:bootstrap
 
 # M0 recon: drive the full flow yourself in a headed browser while we tee
-# every HTTP + WebSocket call into ./recon/. When done, fill RECON.md.
-pnpm run recon:capture
+# every HTTP + WebSocket call into ./recon/. If using system Chrome, keep env set.
+CLAUDE_DESIGN_USE_SYSTEM_CHROME=1 pnpm run recon:capture
 
 pnpm run build
 ```

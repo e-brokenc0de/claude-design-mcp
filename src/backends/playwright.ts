@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { chromium, type BrowserContext, type Page } from "playwright";
+import { type BrowserContext, type Page } from "playwright";
 import type {
   DesignBackend,
   ProjectRef,
@@ -12,6 +12,7 @@ import { config } from "../config.js";
 import { selectors, urls } from "../selectors.js";
 import { E } from "../errors.js";
 import { ProjectRegistry } from "../registry.js";
+import { launchClaudeBrowserContext } from "../chrome-profile.js";
 
 /**
  * Playwright backend with a long-lived persistent context. Each tool call
@@ -31,7 +32,7 @@ export class PlaywrightBackend implements DesignBackend {
     await fs.mkdir(config.profileDir, { recursive: true });
     await fs.mkdir(config.stateDir, { recursive: true });
     await this.registry.load();
-    this.context = await chromium.launchPersistentContext(config.profileDir, {
+    this.context = await launchClaudeBrowserContext({
       headless: !config.headed,
       viewport: { width: 1440, height: 900 },
     });

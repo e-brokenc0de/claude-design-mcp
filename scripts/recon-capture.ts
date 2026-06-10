@@ -14,12 +14,12 @@
  * Privacy: Cookie request headers are redacted. Authorization headers ARE
  * captured (we need them for the API backend); recon/ is gitignored.
  */
-import { chromium, type Request, type Response, type WebSocket } from "playwright";
+import { type Request, type Response, type WebSocket } from "playwright";
 import fs from "node:fs/promises";
 import { createWriteStream, type WriteStream } from "node:fs";
 import path from "node:path";
+import { launchClaudeBrowserContext, profileModeDescription } from "../src/chrome-profile.js";
 
-const PROFILE_DIR = path.resolve(process.env.CLAUDE_DESIGN_PROFILE_DIR ?? "./.auth/profile");
 const BASE = process.env.CLAUDE_DESIGN_BASE_URL ?? "https://claude.ai/design";
 const OUT_DIR = path.resolve("./recon");
 
@@ -40,7 +40,8 @@ async function main() {
   const wsStream: WriteStream = createWriteStream(path.join(OUT_DIR, "websocket.jsonl"), { flags: "a" });
   const conStream: WriteStream = createWriteStream(path.join(OUT_DIR, "console.log"), { flags: "a" });
 
-  const ctx = await chromium.launchPersistentContext(PROFILE_DIR, {
+  console.log(`[recon] using ${profileModeDescription()}`);
+  const ctx = await launchClaudeBrowserContext({
     headless: false,
     viewport: { width: 1440, height: 900 },
   });
