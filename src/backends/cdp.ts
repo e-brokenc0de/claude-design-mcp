@@ -7,8 +7,8 @@ import type {
   CreateInput,
 } from "../backend.js";
 import { config } from "../config.js";
-import { urls, methods, projectType } from "../selectors.js";
-import { E } from "../errors.js";
+import { urls, methods, projectType, selectors } from "../selectors.js";
+import { E, DesignError } from "../errors.js";
 import { ProjectRegistry } from "../registry.js";
 import { attachBrowser, cdpConfig, findOrOpenDesignPage, sleep, type CdpConfig } from "../browser.js";
 import { OmeletteClient } from "../omelette.js";
@@ -30,6 +30,13 @@ interface RpcFileEntry {
   contentType?: string;
   updatedAt?: string;
   version?: string;
+}
+
+/** Live generation signal derived from the project page's RPC traffic. */
+interface ChatActivity {
+  activeChat: number; // in-flight Chat (server-streaming) requests
+  lastWrite: number; // last WriteFiles/stream activity (epoch ms)
+  lastChatStart: number; // last time a Chat request began
 }
 
 function kindFromPath(p: string): FileEntry["kind"] {
@@ -54,6 +61,8 @@ export class CdpBackend implements DesignBackend {
   private registry = new ProjectRegistry(config.stateDir);
   private rpc = new OmeletteClient(() => this.rpcPage());
   private designPage: Page | null = null;
+  private projectPages = new Map<string, Page>(); // projectId -> live project page
+  private activity = new Map<string, ChatActivity>(); // projectId -> live RPC activity
 
   async init(): Promise<void> {
     await this.registry.load();
@@ -72,6 +81,8 @@ export class CdpBackend implements DesignBackend {
   }
 
   async shutdown(): Promise<void> {
+    this.projectPages.clear();
+    this.activity.clear();
     if (this.browser) {
       try { await this.browser.close(); } catch { /* ignore */ }
       this.browser = null;
@@ -178,18 +189,131 @@ export class CdpBackend implements DesignBackend {
     await this.rpc.call(methods.updateOrgSettings, { defaultDesignSystemProjectUuid: projectId });
   }
 
-  // ---------- Chat tools (DOM — implemented next) ----------
+  // ---------- Chat tools (DOM-driven; the Chat RPC payload is opaque) ----------
 
-  async generate(_projectId: string): Promise<void> {
-    throw E.reconRequired("generate (chat DOM wiring)");
+  /** Open + keep a live page for the project (reused across tool calls). */
+  private async projectPage(projectId: string): Promise<Page> {
+    const ref = this.registry.get(projectId);
+    const url = ref?.url ?? urls.projectById(projectId);
+    const existing = this.projectPages.get(projectId);
+    if (existing && !existing.isClosed()) return existing;
+    const ctx = this.ensureContext();
+    const page =
+      ctx.pages().find((p) => p.url().startsWith(url)) ?? (await ctx.newPage());
+    this.trackActivity(projectId, page);
+    if (!page.url().startsWith(url)) {
+      await page.goto(url, { waitUntil: "domcontentloaded" });
+    }
+    await this.waitForCloudflare(page);
+    this.projectPages.set(projectId, page);
+    return page;
   }
 
-  async iterate(_projectId: string, _prompt: string): Promise<void> {
-    throw E.reconRequired("iterate (chat DOM wiring)");
+  /**
+   * Observe the project page's RPC traffic to know when generation is active.
+   * Chat is server-streaming (request stays open while generating); WriteFiles
+   * fire in bursts as files are written. Far more reliable than DOM state.
+   */
+  private trackActivity(projectId: string, page: Page): void {
+    if (this.activity.has(projectId)) return;
+    const a: ChatActivity = { activeChat: 0, lastWrite: 0, lastChatStart: 0 };
+    this.activity.set(projectId, a);
+    const isChat = (u: string) => /OmeletteService\/Chat$/.test(u);
+    const isWrite = (u: string) =>
+      /OmeletteService\/(WriteFiles|CreateFileStream|WriteFileStream)$/.test(u);
+    page.on("request", (r) => {
+      const u = r.url();
+      if (isChat(u)) { a.activeChat += 1; a.lastChatStart = Date.now(); }
+      else if (isWrite(u)) { a.lastWrite = Date.now(); }
+    });
+    const done = (u: string) => { if (isChat(u) && a.activeChat > 0) a.activeChat -= 1; };
+    page.on("requestfinished", (r) => done(r.url()));
+    page.on("requestfailed", (r) => done(r.url()));
   }
 
-  async getStatus(_projectId: string): Promise<{ status: ProjectStatus; detail?: string }> {
-    throw E.reconRequired("getStatus (chat DOM wiring)");
+  /** Generating if a Chat stream is open or files were just written. */
+  private isBusy(projectId: string): boolean {
+    const a = this.activity.get(projectId);
+    if (!a) return false;
+    if (a.activeChat > 0) return true;
+    return Date.now() - a.lastWrite < 12_000;
+  }
+
+  private async verifierRunning(page: Page): Promise<boolean> {
+    try {
+      const body = (await page.locator("body").innerText()).toLowerCase();
+      return selectors.verifierText.test(body);
+    } catch {
+      return false;
+    }
+  }
+
+  /** Type a message into the chat and submit it. */
+  private async sendMessage(page: Page, message: string): Promise<void> {
+    const editor = page.locator(selectors.chatInput).first();
+    await editor.waitFor({ state: "visible", timeout: 30_000 });
+    await editor.click();
+    await page.keyboard.insertText(message);
+    await page.waitForTimeout(300);
+    await page.keyboard.press("Enter");
+  }
+
+  /** Wait until a turn has visibly STARTED (a Chat stream opened), or timeout. */
+  private async waitStarted(projectId: string, timeoutMs = 25_000): Promise<boolean> {
+    const a = this.activity.get(projectId);
+    const baseline = a?.lastChatStart ?? 0;
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (this.isBusy(projectId)) return true;
+      if ((this.activity.get(projectId)?.lastChatStart ?? 0) > baseline) return true;
+      await sleep(750);
+    }
+    return false;
+  }
+
+  /** Wait until the turn + verifier settle (RPC quiet for a window), or timeout. */
+  private async waitSettled(projectId: string, page: Page, timeoutMs = 15 * 60_000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    let quiet = 0;
+    while (Date.now() < deadline) {
+      const busy = this.isBusy(projectId) || (await this.verifierRunning(page));
+      if (busy) {
+        quiet = 0;
+      } else {
+        quiet += 1;
+        if (quiet >= 3) return; // ~9s of quiet → settled
+      }
+      await sleep(3000);
+    }
+  }
+
+  async generate(projectId: string): Promise<void> {
+    const ref = this.registry.get(projectId);
+    const brief = ref?.brief;
+    if (!brief) {
+      throw new DesignError(
+        "NO_BRIEF",
+        `No stored brief for ${projectId}. Pass the brief to create_design_system, or use iterate to send a prompt.`,
+      );
+    }
+    const page = await this.projectPage(projectId);
+    await this.sendMessage(page, brief);
+    await this.waitStarted(projectId);
+    // Return promptly; generation continues — poll get_status.
+  }
+
+  async iterate(projectId: string, prompt: string): Promise<void> {
+    const page = await this.projectPage(projectId);
+    await this.sendMessage(page, prompt);
+    await this.waitStarted(projectId);
+    await this.waitSettled(projectId, page);
+  }
+
+  async getStatus(projectId: string): Promise<{ status: ProjectStatus; detail?: string }> {
+    const page = await this.projectPage(projectId);
+    if (this.isBusy(projectId)) return { status: "generating" };
+    if (await this.verifierRunning(page)) return { status: "generating", detail: "verifying" };
+    return { status: "ready" };
   }
 }
 

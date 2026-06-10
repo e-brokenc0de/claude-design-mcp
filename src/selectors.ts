@@ -54,8 +54,7 @@ export const projectType = {
  * PENDING: confirm against a live project page.
  */
 export const selectors = {
-  chatInput: 'div[contenteditable="true"]', // PENDING_RECON: confirm
-  sendButton: 'button[aria-label*="send" i], button[type="submit"]', // PENDING_RECON
-  verifierIndicator: 'text=/Checking the design for issues/i', // PENDING_RECON
-  stopButton: 'button[aria-label*="stop" i]', // PENDING_RECON
+  chatInput: 'div.ProseMirror[contenteditable="true"]', // verified
+  sendButton: 'button:has-text("Send")', // verified; disabled while a turn is active
+  verifierText: /checking the design|reviewing|verifying/i, // body-text signal
 } as const;
