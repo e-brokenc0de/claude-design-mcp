@@ -3,6 +3,10 @@ dist/
 *.log
 .DS_Store
 
+# Claude Code runtime state (keep .claude/skills tracked)
+.claude/scheduled_tasks.lock
+.claude/**/*.lock
+
 # Secrets & auth state — NEVER commit
 .env
 .env.*
