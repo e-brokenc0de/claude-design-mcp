@@ -2,7 +2,10 @@
 
 An MCP server that drives [Claude Design](https://claude.ai/design) — Anthropic's design-system generator — from agentic coding CLIs (Claude Code, Cursor, etc.). It exposes semantic tools so you can `create_design_system`, `generate`, `iterate`, `list_files`, `read_file`, and `export` without touching a browser.
 
-> **Status:** scaffolding + Playwright backend skeleton landed. Tool implementations are blocked on M0 reconnaissance — run the recon harness below to capture the network/auth surface, then the tool bodies wire up against `src/selectors.ts`.
+> **Status:** working. All ten tools are implemented. Eight call Claude Design's
+> internal `OmeletteService` Connect-RPC API as JSON (via in-page `fetch`);
+> `generate`/`iterate`/`get_status` drive the chat UI (the `Chat` RPC payload is
+> opaque). See `RECON.md` for the full API map.
 
 ## Tools
 
