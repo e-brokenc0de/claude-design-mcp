@@ -26,19 +26,31 @@ export const rpc = {
 /** RPC method names (verified in recon). */
 export const methods = {
   getMe: "GetMe",
+  getUsageStatus: "GetUsageStatus",
   listProjects: "ListProjects",
   listOrgProjects: "ListOrgProjects",
   createProject: "CreateProject",
   getProject: "GetProject",
+  updateProject: "UpdateProject",
   deleteProject: "DeleteProject",
+  duplicateProject: "DuplicateProject",
+  remixProject: "RemixProject",
+  setProjectFavorite: "SetProjectFavorite",
   getChatMessages: "GetChatMessages",
+  getProjectData: "GetProjectData",
+  updateProjectData: "UpdateProjectData",
+  updateProjectDesignSystems: "UpdateProjectDesignSystems",
+  refreshBoundDesignSystem: "RefreshBoundDesignSystem",
   listFiles: "ListFiles",
   getFile: "GetFile",
+  writeFiles: "WriteFiles",
+  editFile: "EditFile",
+  deleteFile: "DeleteFile",
+  grepFiles: "GrepFiles",
   setProjectPublished: "SetProjectPublished",
   getOrgSettings: "GetOrgSettings",
   updateOrgSettings: "UpdateOrgSettings",
-  bundleProject: "BundleProject",
-  mintDesignSyncCode: "MintDesignSyncCode",
+  createClaudeCodeSession: "CreateClaudeCodeSession",
 } as const;
 
 /** ProjectType enum values. */

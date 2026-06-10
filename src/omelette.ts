@@ -30,42 +30,54 @@ export class OmeletteClient {
   async call<T = unknown>(method: string, body: unknown, opts?: { org?: boolean }): Promise<T> {
     const withOrg = opts?.org !== false;
     const org = withOrg ? await this.ensureOrg() : "";
-    const page = await this.getPage();
     const url = rpc.url(method);
+    const payload = JSON.stringify(body ?? {});
 
-    const result = await page.evaluate(
-      async (args: { url: string; body: string; org: string }) => {
-        const headers: Record<string, string> = {
-          "content-type": "application/json",
-          "connect-protocol-version": "1",
-        };
-        if (args.org) headers["x-organization-uuid"] = args.org;
-        const res = await fetch(args.url, {
-          method: "POST",
-          headers,
-          credentials: "include",
-          body: args.body,
-        });
-        const text = await res.text();
-        return { status: res.status, ok: res.ok, text };
-      },
-      { url, body: JSON.stringify(body ?? {}), org },
-    );
+    let lastErr: DesignError | null = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const page = await this.getPage();
+      const result = await page.evaluate(
+        async (args: { url: string; body: string; org: string }) => {
+          const headers: Record<string, string> = {
+            "content-type": "application/json",
+            "connect-protocol-version": "1",
+          };
+          if (args.org) headers["x-organization-uuid"] = args.org;
+          const res = await fetch(args.url, {
+            method: "POST",
+            headers,
+            credentials: "include",
+            body: args.body,
+          });
+          const text = await res.text();
+          return { status: res.status, ok: res.ok, text };
+        },
+        { url, body: payload, org },
+      );
 
-    if (!result.ok) {
+      if (result.ok) {
+        if (!result.text) return {} as T;
+        try {
+          return JSON.parse(result.text) as T;
+        } catch {
+          throw new DesignError("RPC_PARSE", `${method} returned non-JSON: ${result.text.slice(0, 200)}`);
+        }
+      }
+
       let msg = result.text;
       try {
         const j = JSON.parse(result.text) as { code?: string; message?: string };
         msg = `${j.code ?? result.status}: ${j.message ?? result.text}`;
       } catch { /* keep raw */ }
-      throw new DesignError("RPC_ERROR", `${method} failed [${result.status}] ${msg}`);
-    }
+      lastErr = new DesignError("RPC_ERROR", `${method} failed [${result.status}] ${msg}`);
 
-    if (!result.text) return {} as T;
-    try {
-      return JSON.parse(result.text) as T;
-    } catch {
-      throw new DesignError("RPC_PARSE", `${method} returned non-JSON: ${result.text.slice(0, 200)}`);
+      // Retry only transient server errors.
+      if (result.status >= 500 && attempt < 2) {
+        await new Promise((r) => setTimeout(r, 800 * (attempt + 1)));
+        continue;
+      }
+      throw lastErr;
     }
+    throw lastErr ?? new DesignError("RPC_ERROR", `${method} failed`);
   }
 }
