@@ -1,0 +1,20 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+
+# Secrets & auth state — NEVER commit
+.env
+.env.*
+!.env.example
+.auth/
+storageState.json
+browser-profile/
+
+# Recon artifacts (HARs can leak cookies)
+recon/*.har
+recon/*.json
+!recon/.gitkeep
+
+# Project state cache
+.claude-design-mcp/

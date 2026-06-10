@@ -1,0 +1,41 @@
+{
+  "name": "claude-design-mcp",
+  "version": "0.1.0",
+  "description": "MCP server that drives Anthropic's Claude Design (claude.ai/design) — create, generate, iterate, and export design systems from agentic coding CLIs.",
+  "type": "module",
+  "main": "dist/server.js",
+  "bin": {
+    "claude-design-mcp": "dist/server.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    ".mcp.json"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/server.js",
+    "recon:login": "tsx scripts/recon-login.ts",
+    "recon:capture": "tsx scripts/recon-capture.ts",
+    "auth:bootstrap": "tsx scripts/auth-bootstrap.ts"
+  },
+  "keywords": [
+    "mcp",
+    "claude",
+    "design-system",
+    "playwright",
+    "anthropic"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.4.1",
+    "playwright": "^1.48.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}

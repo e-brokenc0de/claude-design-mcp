@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "claude-design": {
+      "command": "node",
+      "args": ["./dist/server.js"],
+      "env": {
+        "CLAUDE_DESIGN_PROFILE_DIR": "./.auth/profile",
+        "CLAUDE_DESIGN_STATE_DIR": "./.claude-design-mcp"
+      }
+    }
+  }
+}
