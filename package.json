@@ -17,7 +17,8 @@
     "dev": "tsc --watch",
     "start": "node dist/server.js",
     "chrome:cdp": "tsx scripts/chrome-cdp.ts",
-    "recon:capture": "tsx scripts/recon-capture.ts"
+    "recon:capture": "tsx scripts/recon-capture.ts",
+    "scaffold:ui": "tsx scripts/scaffold-ui.ts"
   },
   "keywords": [
     "mcp",

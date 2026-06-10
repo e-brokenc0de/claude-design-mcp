@@ -39,6 +39,7 @@ An MCP server that drives [Claude Design](https://claude.ai/design) — Anthropi
 | `list_files({ projectId })` | List files (`tokens/*.css`, `components/*`, `SKILL.md`, …). |
 | `read_file({ projectId, path })` | Read a single file (utf8). |
 | `export({ projectId, destDir })` | Dump all files to `destDir`, byte-faithful. |
+| `export_handoff({ projectId, destDir })` | Handoff bundle: `project/` files + `chats/` transcripts + a `README`/PROMPT for a coding agent. |
 | `search_files({ projectId, pattern })` | Grep files → `{ path, line, context }`. |
 | `write_file` / `edit_file` / `delete_file` | Direct file edits without chat. |
 
@@ -76,6 +77,23 @@ pnpm run build
 The MCP server attaches to the same Chrome (port 9222 by default). If Chrome
 isn't running, the server auto-launches it; if it's not logged in, tools return
 `NOT_AUTHED` — run `pnpm run chrome:cdp` and log in.
+
+## Scaffold a `packages/ui` from an export
+
+Turn a Claude Design export (the `project/` folder of a handoff bundle, or a plain
+`export` dir) into a maintainable token + UI package: DTCG tokens → Style Dictionary →
+Tailwind v4 `@theme`, plus a component skeleton. Components are scaffolded (not
+auto-converted) with the raw export kept under `_design-source/` for Claude Code to port.
+
+```bash
+pnpm run scaffold:ui -- --src <exportDir> --out <repo>/packages --name ui --ds-name "My DS"
+```
+
+Produces `packages/tokens` (DTCG JSON source of truth + `build/theme.css` + `tokens.ts`,
+rebuildable with `style-dictionary build`) and `packages/ui` (`styles/`, `primitives/`,
+`components/`, `index.ts`, `CLAUDE.md`), plus a root `PROMPT.md` with porting steps.
+Primitives land in `:root`; semantic tokens become Tailwind utilities via `@theme inline`,
+with `var()` references preserved so a one-token re-theme still cascades.
 
 ## Registering with Claude Code / Cursor
 
