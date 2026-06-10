@@ -125,32 +125,59 @@ function cleanKey(cssName: string, group: Group): string {
 }
 
 // ---------- main ----------
+/** Find the token CSS files to parse, handling design-system and project layouts. */
+async function resolveTokenFiles(srcDir: string): Promise<string[]> {
+  // 1) canonical layered design-system source
+  if (existsSync(path.join(srcDir, "system/tokens.css"))) {
+    return ["system/tokens.css", "miniapp.css"].map((r) => path.join(srcDir, r)).filter(existsSync);
+  }
+  // 2) design project handoff: bound design system under _ds/<ds>/
+  const dsRoot = path.join(srcDir, "_ds");
+  if (existsSync(dsRoot)) {
+    const dirs = (await fs.readdir(dsRoot, { withFileTypes: true })).filter((e) => e.isDirectory());
+    const files: string[] = [];
+    for (const d of dirs) {
+      const dsDir = path.join(dsRoot, d.name);
+      const tokensDir = path.join(dsDir, "tokens");
+      if (existsSync(tokensDir)) {
+        for (const f of await fs.readdir(tokensDir)) if (f.endsWith(".css")) files.push(path.join(tokensDir, f));
+      }
+      for (const single of ["tokens.css", "colors_and_type.css", "styles.css"]) {
+        if (files.length === 0 && existsSync(path.join(dsDir, single))) files.push(path.join(dsDir, single));
+      }
+    }
+    if (files.length) return files;
+  }
+  // 3) flattened single-file sources at the root
+  return ["tokens.css", "colors_and_type.css", "styles.css", "theme.css"]
+    .map((r) => path.join(srcDir, r))
+    .filter(existsSync);
+}
+
 async function main(): Promise<void> {
   const srcDir = path.resolve(SRC!);
   const outDir = path.resolve(OUT!);
   const tokensPkg = path.join(outDir, "tokens");
   const uiPkg = path.join(outDir, PKG);
 
-  // 1) collect token CSS. Prefer the canonical LAYERED source (system/tokens.css +
-  // additive miniapp.css) over the flattened colors_and_type.css — mixing them lets
-  // flattened literals clobber the var() layering and breaks primitive/semantic split.
-  const candidates = existsSync(path.join(srcDir, "system/tokens.css"))
-    ? ["system/tokens.css", "miniapp.css"]
-    : ["tokens.css", "colors_and_type.css", "styles.css", "theme.css"];
+  // 1) collect token CSS. Layouts vary:
+  //  - design SYSTEM export: canonical system/tokens.css (+ additive miniapp.css), or
+  //    flattened colors_and_type.css at the root.
+  //  - design PROJECT handoff: tokens live in the bound DS under
+  //    `_ds/<ds>/tokens/*.css` (+ that DS's styles.css).
+  // Prefer the layered source; avoid mixing flattened literals with var() layering.
+  const tokenFiles = await resolveTokenFiles(srcDir);
+  if (tokenFiles.length === 0) {
+    console.error(`No token CSS found under ${srcDir} (looked for system/tokens.css, _ds/*/tokens/*.css, tokens.css, colors_and_type.css, styles.css).`);
+    process.exit(1);
+  }
   const cssTexts: string[] = [];
   let fontImport = "";
-  for (const rel of candidates) {
-    const p = path.join(srcDir, rel);
-    if (existsSync(p)) {
-      const t = await fs.readFile(p, "utf8");
-      cssTexts.push(t);
-      const fi = t.match(/@import url\(["']https:\/\/fonts\.googleapis[^)]+["']\)/);
-      if (fi && !fontImport) fontImport = fi[0] + ";";
-    }
-  }
-  if (cssTexts.length === 0) {
-    console.error(`No token CSS found under ${srcDir} (looked for ${candidates.join(", ")}).`);
-    process.exit(1);
+  for (const p of tokenFiles) {
+    const t = await fs.readFile(p, "utf8");
+    cssTexts.push(t);
+    const fi = t.match(/@import url\(["']https:\/\/fonts\.googleapis[^)]+["']\)/);
+    if (fi && !fontImport) fontImport = fi[0] + ";";
   }
 
   // 2) parse + dedupe decls (last wins), build literal map

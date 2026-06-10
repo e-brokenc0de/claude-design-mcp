@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
+import { existsSync } from "node:fs";
 import path from "node:path";
+import { x as tarX } from "tar";
 import { type Browser, type BrowserContext, type Page } from "playwright";
 import type {
   DesignBackend,
@@ -16,7 +18,7 @@ import type {
   UsageStatus,
 } from "../backend.js";
 import { config } from "../config.js";
-import { urls, methods, projectType, selectors } from "../selectors.js";
+import { urls, methods, projectType, selectors, handoff } from "../selectors.js";
 import { E, DesignError } from "../errors.js";
 import { ProjectRegistry } from "../registry.js";
 import { attachBrowser, cdpConfig, findOrOpenDesignPage, sleep, type CdpConfig } from "../browser.js";
@@ -403,6 +405,47 @@ export class CdpBackend implements DesignBackend {
     return { files: files.length, chats: chats.length, dir: destDir };
   }
 
+  async mintHandoff(
+    projectId: string,
+    opts?: { includeChats?: boolean; instructions?: string; destDir?: string },
+  ): Promise<{ url: string; command: string; expiresAt?: string; dir?: string; projectDir?: string; files?: number }> {
+    const res = await this.rpc.call<{ token?: string; expiresAt?: string }>(methods.mintHandoffToken, {
+      projectId,
+      includeChats: opts?.includeChats ?? true,
+    });
+    if (!res.token) throw new DesignError("HANDOFF_FAILED", "MintHandoffToken returned no token.");
+    const url = handoff.url(res.token);
+    const command = handoff.command(url, opts?.instructions?.trim() || "the designs in this project");
+    const result: { url: string; command: string; expiresAt?: string; dir?: string; projectDir?: string; files?: number } = {
+      url,
+      command,
+      expiresAt: res.expiresAt,
+    };
+
+    if (opts?.destDir) {
+      // Capability URL: fetchable without cookies. Download the tar.gz + extract.
+      const dest = path.resolve(opts.destDir);
+      await fs.mkdir(dest, { recursive: true });
+      const resp = await fetch(url);
+      if (!resp.ok) throw new DesignError("HANDOFF_FETCH", `Bundle fetch failed [${resp.status}] ${url}`);
+      const buf = Buffer.from(await resp.arrayBuffer());
+      const tgz = path.join(dest, "handoff.tar.gz");
+      await fs.writeFile(tgz, buf);
+      await tarX({ file: tgz, cwd: dest });
+      await fs.rm(tgz, { force: true });
+      // The bundle extracts to a single top-level dir; find its project/ subdir.
+      const roots = (await fs.readdir(dest, { withFileTypes: true })).filter((e) => e.isDirectory());
+      const root = roots.find((e) => existsSync(path.join(dest, e.name, "project"))) ?? roots[0];
+      result.dir = dest;
+      if (root) {
+        const projectDir = path.join(dest, root.name, "project");
+        result.projectDir = existsSync(projectDir) ? projectDir : path.join(dest, root.name);
+        result.files = await countFiles(result.projectDir);
+      }
+    }
+    return result;
+  }
+
   async publish(projectId: string): Promise<void> {
     await this.rpc.call(methods.setProjectPublished, { projectId, published: true });
   }
@@ -618,6 +661,15 @@ async function mapLimit<T>(items: T[], limit: number, fn: (item: T) => Promise<v
 
 function slugify(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 50);
+}
+
+async function countFiles(dir: string): Promise<number> {
+  let n = 0;
+  for (const e of await fs.readdir(dir, { withFileTypes: true })) {
+    if (e.isDirectory()) n += await countFiles(path.join(dir, e.name));
+    else n += 1;
+  }
+  return n;
 }
 
 interface ChatMsg {

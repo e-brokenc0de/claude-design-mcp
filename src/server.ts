@@ -65,6 +65,11 @@ const RenameSchema = ProjectIdSchema.extend({ name: z.string().min(1) });
 const RemixSchema = ProjectIdSchema.extend({ includeChats: z.boolean().optional() });
 const FavoriteSchema = ProjectIdSchema.extend({ favorite: z.boolean() });
 const ClaudeCodeSchema = ProjectIdSchema.extend({ instructions: z.string().optional() });
+const MintHandoffSchema = ProjectIdSchema.extend({
+  includeChats: z.boolean().optional(),
+  instructions: z.string().optional(),
+  destDir: z.string().optional(),
+});
 
 const tools = [
   {
@@ -131,9 +136,24 @@ const tools = [
     },
   },
   {
+    name: "mint_handoff",
+    description:
+      "PRIMARY handoff to Claude Code. Mints the official capability URL to the server-built bundle and returns a ready-to-run command (Fetch … <url> / Implement: …). The URL is fetchable without auth and expires shortly. Pass destDir to also download + extract the bundle locally (returns projectDir, ready for `pnpm run scaffold:ui`).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string" },
+        includeChats: { type: "boolean", description: "Bundle the conversation transcripts (default true)." },
+        instructions: { type: "string", description: "What the agent should implement (fills the command's 'Implement:' line)." },
+        destDir: { type: "string", description: "Optional: download + extract the bundle here; returns the extracted projectDir." },
+      },
+      required: ["projectId"],
+    },
+  },
+  {
     name: "export_handoff",
     description:
-      "Export a Claude Code handoff bundle: all files under project/, chat transcripts under chats/, and a README/PROMPT telling a coding agent how to consume it. Use this (not plain export) when handing off to Claude Code.",
+      "DEPRECATED — prefer `mint_handoff`. Builds a LOCAL handoff bundle (project/ files + chats/ transcripts + README) by reading every file over CDP. Use only for offline bundles or to commit transcripts into a repo.",
     inputSchema: {
       type: "object",
       properties: { projectId: { type: "string" }, destDir: { type: "string" } },
@@ -386,6 +406,15 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
           await fs.writeFile(out, data);
         }
         return text(`exported ${files.length} files to ${a.destDir}`);
+      }
+      case "mint_handoff": {
+        const a = MintHandoffSchema.parse(rawArgs);
+        const r = await backend.mintHandoff(a.projectId, {
+          includeChats: a.includeChats,
+          instructions: a.instructions,
+          destDir: a.destDir,
+        });
+        return text(JSON.stringify(r, null, 2));
       }
       case "export_handoff": {
         const a = ExportSchema.parse(rawArgs);

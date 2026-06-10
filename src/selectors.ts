@@ -51,6 +51,14 @@ export const methods = {
   getOrgSettings: "GetOrgSettings",
   updateOrgSettings: "UpdateOrgSettings",
   createClaudeCodeSession: "CreateClaudeCodeSession",
+  mintHandoffToken: "MintHandoffToken",
+} as const;
+
+/** Official Claude Code handoff: capability URL built from a minted token. */
+export const handoff = {
+  url: (token: string) => `https://api.anthropic.com/v1/design/h/${token}`,
+  command: (url: string, instructions: string) =>
+    `Fetch this design file, read its readme, and implement the relevant aspects of the design. ${url}\nImplement: ${instructions}`,
 } as const;
 
 /** ProjectType enum values. */

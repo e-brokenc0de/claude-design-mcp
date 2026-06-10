@@ -39,7 +39,8 @@ An MCP server that drives [Claude Design](https://claude.ai/design) — Anthropi
 | `list_files({ projectId })` | List files (`tokens/*.css`, `components/*`, `SKILL.md`, …). |
 | `read_file({ projectId, path })` | Read a single file (utf8). |
 | `export({ projectId, destDir })` | Dump all files to `destDir`, byte-faithful. |
-| `export_handoff({ projectId, destDir })` | Handoff bundle: `project/` files + `chats/` transcripts + a `README`/PROMPT for a coding agent. |
+| `mint_handoff({ projectId, includeChats?, instructions?, destDir? })` | **Primary handoff.** Official capability URL + ready Claude Code command; with `destDir`, downloads + extracts the bundle and returns `projectDir` (feed to `scaffold:ui`). |
+| `export_handoff({ projectId, destDir })` | _Deprecated_ — local bundle (`project/` + `chats/` + README). Prefer `mint_handoff`. |
 | `search_files({ projectId, pattern })` | Grep files → `{ path, line, context }`. |
 | `write_file` / `edit_file` / `delete_file` | Direct file edits without chat. |
 

@@ -37,7 +37,8 @@ are UUIDs returned by create/list tools.
 | `list_files` | `{ projectId }` | `[{ path, size, kind }]` (files only, recursive). |
 | `read_file` | `{ projectId, path }` | UTF-8 contents. |
 | `export` | `{ projectId, destDir }` | Writes all files (binary-safe) to `destDir`. Returns a summary. |
-| `export_handoff` | `{ projectId, destDir }` | Handoff bundle: `project/` files + `chats/` transcripts + a `README`/PROMPT for a coding agent. Prefer this when handing off to Claude Code. |
+| `mint_handoff` | `{ projectId, includeChats?, instructions?, destDir? }` | **Primary handoff.** Mints the official capability URL + ready command (`Fetch … <url>` / `Implement: …`); URL is auth-free & short-lived. With `destDir`, also downloads + extracts the bundle and returns `projectDir` (feed it to `scaffold:ui`). |
+| `export_handoff` | `{ projectId, destDir }` | DEPRECATED — prefer `mint_handoff`. Local bundle (`project/` + `chats/` + README) read over CDP; for offline use / committing transcripts. |
 | `search_files` | `{ projectId, pattern }` | `[{ path, line, context }]` (grep). |
 | `write_file` | `{ projectId, path, content }` | Create/overwrite a UTF-8 file. |
 | `edit_file` | `{ projectId, path, oldString, newString }` | Single exact-string replace. Returns edits applied. |
@@ -76,7 +77,19 @@ Not MCP tools — run with `pnpm run …` in `~/repos/mcp-servers/claude-design-
 - `RPC_ERROR [400] … not published` — tried to attach an unpublished design system; `publish` it first.
 - `UNKNOWN_CONVERSATION` — bad `conversationId`; call `list_conversations`.
 
+## Handoff chain (recommended)
+
+```
+mint_handoff({ projectId, instructions })            → official URL + command for Claude Code
+mint_handoff({ projectId, destDir })                 → also downloads + extracts → projectDir
+pnpm run scaffold:ui -- --src <projectDir> --out <repo>/packages   → packages/tokens + packages/ui
+```
+
+The bundle (tar.gz) extracts to `<slug>/project/` (+ `<slug>/chats/`, `<slug>/README.md`).
+`scaffold:ui` reads tokens from `system/tokens.css`, a project's `_ds/<ds>/tokens/*.css`,
+or root token CSS — so point `--src` at the extracted `project/` dir.
+
 ## Not available (gated on some accounts)
 
-- Whole-project ZIP bundling and the design-sync CLI code are not exposed — use `export`
-  for a local copy of all files.
+- The design-sync CLI code (`MintDesignSyncCode`) returns `501` on some accounts.
+  Use `mint_handoff` (official bundle URL) or `export` for a local copy.

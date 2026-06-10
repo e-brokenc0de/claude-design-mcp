@@ -94,8 +94,24 @@ export interface DesignBackend {
   listFiles(projectId: string): Promise<FileEntry[]>;
   readFile(projectId: string, filePath: string): Promise<string>;
   readFileRaw(projectId: string, filePath: string): Promise<{ data: Buffer; contentType?: string }>;
-  /** Export all files plus a handoff bundle (README/PROMPT + chat transcripts). */
+  /** Export all files plus a handoff bundle (README/PROMPT + chat transcripts). DEPRECATED: prefer mintHandoff. */
   exportHandoff(projectId: string, destDir: string): Promise<{ files: number; chats: number; dir: string }>;
+  /**
+   * Official Claude Code handoff: mint a capability URL to the server-built bundle
+   * (tar.gz). Returns the URL + ready-to-run command. If destDir is given, also
+   * downloads + extracts the bundle locally and returns the extracted project dir.
+   */
+  mintHandoff(
+    projectId: string,
+    opts?: { includeChats?: boolean; instructions?: string; destDir?: string },
+  ): Promise<{
+    url: string;
+    command: string;
+    expiresAt?: string;
+    dir?: string;
+    projectDir?: string;
+    files?: number;
+  }>;
   searchFiles(projectId: string, pattern: string): Promise<GrepMatch[]>;
   writeFile(projectId: string, filePath: string, content: string): Promise<void>;
   editFile(projectId: string, filePath: string, oldString: string, newString: string): Promise<number>;

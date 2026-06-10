@@ -117,16 +117,29 @@ send_message({ projectId, prompt, conversationId: chatId })
 Use `send_message` with a `conversationId` when the user refers to "that earlier
 conversation/thread"; otherwise `iterate` (active thread) is fine.
 
-### 4. Export into a repo (the payoff)
+### 4. Hand off to Claude Code / pull into a repo (the payoff)
+
+**Primary: `mint_handoff`** — the official handoff. It mints a short-lived, auth-free
+capability URL to the server-built bundle and returns a ready-to-run command:
 
 ```
-list_files({ projectId })
-export({ projectId, destDir: "<repo>/packages/ui" })
+mint_handoff({ projectId, instructions })   → { url, command, expiresAt }
+   command = "Fetch this design file, read its readme, and implement … <url>\nImplement: …"
 ```
 
-`export` writes all files byte-faithfully (CSS tokens, components, `SKILL.md`,
-`styles.css`, images, etc.). Read a couple of files first to confirm structure, then
-export to the target the user names.
+Give the user/agent that `command` (it's literally a Claude Code prompt). To pull it
+locally instead, pass `destDir` — it downloads + extracts the bundle and returns the
+extracted `projectDir`:
+
+```
+mint_handoff({ projectId, destDir, includeChats: true })   → { url, dir, projectDir, files }
+pnpm run scaffold:ui -- --src <projectDir> --out <repo>/packages   → packages/tokens + packages/ui
+```
+
+Other options:
+- **`export({ projectId, destDir })`** — raw byte-faithful dump of all files (no README/chats).
+- **`export_handoff`** — DEPRECATED local bundle; use only offline or to commit transcripts.
+- **`publish`** — make a design system reusable as a Skill across projects.
 
 ### 5. Attach / detach a design system to an existing project
 
