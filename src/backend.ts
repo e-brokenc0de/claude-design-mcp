@@ -14,6 +14,10 @@ export interface ProjectRef {
   projectId: string;
   url: string;
   name: string;
+  /** The brief, stashed at create time and sent on first generate. */
+  brief?: string;
+  /** The active chat id once generation has begun (for status/iterate). */
+  chatId?: string;
 }
 
 export interface FileEntry {
@@ -39,7 +43,10 @@ export interface DesignBackend {
   getStatus(projectId: string): Promise<{ status: ProjectStatus; detail?: string }>;
   iterate(projectId: string, prompt: string): Promise<void>;
   listFiles(projectId: string): Promise<FileEntry[]>;
+  /** Decoded text contents (utf8). For binary files prefer readFileRaw. */
   readFile(projectId: string, filePath: string): Promise<string>;
+  /** Raw bytes + content type — used by export to write files faithfully. */
+  readFileRaw(projectId: string, filePath: string): Promise<{ data: Buffer; contentType?: string }>;
   publish(projectId: string): Promise<void>;
   setDefault(projectId: string): Promise<void>;
   listDesignSystems(): Promise<ProjectRef[]>;

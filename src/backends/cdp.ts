@@ -7,26 +7,53 @@ import type {
   CreateInput,
 } from "../backend.js";
 import { config } from "../config.js";
-import { urls } from "../selectors.js";
+import { urls, methods, projectType } from "../selectors.js";
 import { E } from "../errors.js";
 import { ProjectRegistry } from "../registry.js";
 import { attachBrowser, cdpConfig, findOrOpenDesignPage, sleep, type CdpConfig } from "../browser.js";
+import { OmeletteClient } from "../omelette.js";
+
+// ---- RPC response shapes (subset; see RECON.md) ----
+interface ProjectListItem {
+  projectId: string;
+  name: string;
+  type: string;
+  publishedAt?: string;
+  isOwned?: boolean;
+  canEdit?: boolean;
+}
+interface RpcFileEntry {
+  name: string;
+  path: string;
+  type: "file" | "directory";
+  size?: string;
+  contentType?: string;
+  updatedAt?: string;
+  version?: string;
+}
+
+function kindFromPath(p: string): FileEntry["kind"] {
+  const ext = p.split(".").pop()?.toLowerCase() ?? "";
+  if (["css"].includes(ext)) return "css";
+  if (["ts"].includes(ext)) return "ts";
+  if (["tsx", "jsx"].includes(ext)) return "tsx";
+  if (["md"].includes(ext)) return "md";
+  if (["json"].includes(ext)) return "json";
+  return "other";
+}
 
 /**
- * CDP-attached backend. Connects to a real Chrome (launched with a remote
- * debugging port) instead of Playwright's bundled Chromium, so claude.ai's
- * Cloudflare protection treats it as a genuine browser. Chrome stays alive
- * across stdio tool calls; we reattach each time the backend is used.
- *
- * Tool bodies are still BLOCKED ON RECON — once the network/DOM surface is
- * captured we wire each tool either to an in-page fetch (preferred) or a DOM
- * interaction, both centralized via src/selectors.ts.
+ * CDP-attached backend. Most tools call the OmeletteService Connect-RPC API via
+ * in-page JSON fetch; generate/iterate drive the chat UI (the Chat RPC carries
+ * an opaque payload). Chrome stays alive across stdio calls.
  */
 export class CdpBackend implements DesignBackend {
   private browser: Browser | null = null;
   private context: BrowserContext | null = null;
   private cfg: CdpConfig = cdpConfig();
   private registry = new ProjectRegistry(config.stateDir);
+  private rpc = new OmeletteClient(() => this.rpcPage());
+  private designPage: Page | null = null;
 
   async init(): Promise<void> {
     await this.registry.load();
@@ -34,8 +61,6 @@ export class CdpBackend implements DesignBackend {
     this.browser = browser;
     this.context = context;
 
-    // Auth sanity check: open /design, wait out any brief Cloudflare check,
-    // and fail loudly if we land on /login.
     const page = await findOrOpenDesignPage(context, urls.base);
     await this.waitForCloudflare(page);
     if (/\/(login|auth)/.test(page.url())) {
@@ -43,11 +68,10 @@ export class CdpBackend implements DesignBackend {
         "CDP Chrome is not logged into claude.ai. Run `pnpm run chrome:cdp`, log in once, then retry.",
       );
     }
+    this.designPage = page;
   }
 
   async shutdown(): Promise<void> {
-    // Detach only — leave Chrome running so the session persists and the next
-    // server start reattaches instantly.
     if (this.browser) {
       try { await this.browser.close(); } catch { /* ignore */ }
       this.browser = null;
@@ -61,7 +85,18 @@ export class CdpBackend implements DesignBackend {
     return this.context;
   }
 
-  /** Wait out Cloudflare's "Just a moment…" interstitial if present. */
+  /** Any live claude.ai page works for same-origin in-page RPC fetches. */
+  private async rpcPage(): Promise<Page> {
+    if (this.designPage && !this.designPage.isClosed()) return this.designPage;
+    const ctx = this.ensureContext();
+    const existing = ctx.pages().find((p) => p.url().startsWith("https://claude.ai"));
+    if (existing) { this.designPage = existing; return existing; }
+    const page = await findOrOpenDesignPage(ctx, urls.base);
+    await this.waitForCloudflare(page);
+    this.designPage = page;
+    return page;
+  }
+
   private async waitForCloudflare(page: Page, timeoutMs = 30_000): Promise<void> {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
@@ -71,55 +106,90 @@ export class CdpBackend implements DesignBackend {
     }
   }
 
-  private async pageFor(projectId: string): Promise<Page> {
-    const ref = this.registry.get(projectId);
-    if (!ref) throw E.unknownProject(projectId);
-    const ctx = this.ensureContext();
-    for (const p of ctx.pages()) {
-      if (p.url().startsWith(ref.url)) return p;
+  // ---------- API tools ----------
+
+  async listDesignSystems(): Promise<ProjectRef[]> {
+    const res = await this.rpc.call<{ items?: ProjectListItem[] }>(methods.listProjects, {});
+    const items = (res.items ?? []).filter((p) => p.type === projectType.designSystem);
+    return items.map((p) => ({ projectId: p.projectId, url: urls.projectById(p.projectId), name: p.name }));
+  }
+
+  async createDesignSystem(input: CreateInput): Promise<ProjectRef> {
+    const res = await this.rpc.call<{ projectId: string }>(methods.createProject, {
+      name: input.name,
+      type: projectType.designSystem,
+    });
+    if (!res.projectId) throw new Error("CreateProject returned no projectId.");
+    const ref: ProjectRef = {
+      projectId: res.projectId,
+      url: urls.projectById(res.projectId),
+      name: input.name,
+      brief: input.brief,
+    };
+    this.registry.upsert(ref);
+    await this.registry.save();
+    return ref;
+  }
+
+  async listFiles(projectId: string): Promise<FileEntry[]> {
+    const out: FileEntry[] = [];
+    let offset = 0;
+    // depth large enough to flatten the tree; page via offset if truncated.
+    for (;;) {
+      const res = await this.rpc.call<{ entries?: RpcFileEntry[]; truncated?: boolean }>(
+        methods.listFiles,
+        { projectId, depth: 100, offset },
+      );
+      const entries = res.entries ?? [];
+      for (const e of entries) {
+        if (e.type !== "file") continue;
+        out.push({
+          path: e.path,
+          size: e.size ? Number(e.size) : undefined,
+          kind: kindFromPath(e.path),
+        });
+      }
+      if (!res.truncated || entries.length === 0) break;
+      offset += entries.length;
     }
-    const page = await ctx.newPage();
-    await page.goto(ref.url, { waitUntil: "domcontentloaded" });
-    await this.waitForCloudflare(page);
-    return page;
+    return out;
   }
 
-  // ---------- Tool implementations (BLOCKED ON RECON) ----------
-
-  async createDesignSystem(_input: CreateInput): Promise<ProjectRef> {
-    throw E.reconRequired("createDesignSystem");
+  async readFileRaw(projectId: string, filePath: string): Promise<{ data: Buffer; contentType?: string }> {
+    const res = await this.rpc.call<{ content?: string; contentType?: string; isBase64?: boolean }>(
+      methods.getFile,
+      { projectId, path: filePath },
+    );
+    // Connect-JSON serializes the `bytes` content field as base64.
+    const data = Buffer.from(res.content ?? "", "base64");
+    return { data, contentType: res.contentType };
   }
+
+  async readFile(projectId: string, filePath: string): Promise<string> {
+    const { data } = await this.readFileRaw(projectId, filePath);
+    return data.toString("utf8");
+  }
+
+  async publish(projectId: string): Promise<void> {
+    await this.rpc.call(methods.setProjectPublished, { projectId, published: true });
+  }
+
+  async setDefault(projectId: string): Promise<void> {
+    await this.rpc.call(methods.updateOrgSettings, { defaultDesignSystemProjectUuid: projectId });
+  }
+
+  // ---------- Chat tools (DOM — implemented next) ----------
 
   async generate(_projectId: string): Promise<void> {
-    throw E.reconRequired("generate");
-  }
-
-  async getStatus(_projectId: string): Promise<{ status: ProjectStatus; detail?: string }> {
-    throw E.reconRequired("getStatus");
+    throw E.reconRequired("generate (chat DOM wiring)");
   }
 
   async iterate(_projectId: string, _prompt: string): Promise<void> {
-    throw E.reconRequired("iterate");
+    throw E.reconRequired("iterate (chat DOM wiring)");
   }
 
-  async listFiles(_projectId: string): Promise<FileEntry[]> {
-    throw E.reconRequired("listFiles");
-  }
-
-  async readFile(_projectId: string, _filePath: string): Promise<string> {
-    throw E.reconRequired("readFile");
-  }
-
-  async publish(_projectId: string): Promise<void> {
-    throw E.reconRequired("publish");
-  }
-
-  async setDefault(_projectId: string): Promise<void> {
-    throw E.reconRequired("setDefault");
-  }
-
-  async listDesignSystems(): Promise<ProjectRef[]> {
-    return this.registry.list();
+  async getStatus(_projectId: string): Promise<{ status: ProjectStatus; detail?: string }> {
+    throw E.reconRequired("getStatus (chat DOM wiring)");
   }
 }
 

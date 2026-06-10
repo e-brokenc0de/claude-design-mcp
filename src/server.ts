@@ -169,10 +169,10 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         const files = await backend.listFiles(a.projectId);
         await fs.mkdir(a.destDir, { recursive: true });
         for (const f of files) {
-          const body = await backend.readFile(a.projectId, f.path);
+          const { data } = await backend.readFileRaw(a.projectId, f.path);
           const out = path.join(a.destDir, f.path);
           await fs.mkdir(path.dirname(out), { recursive: true });
-          await fs.writeFile(out, body);
+          await fs.writeFile(out, data);
         }
         return text(`exported ${files.length} files to ${a.destDir}`);
       }
