@@ -14,6 +14,13 @@ import { DesignError } from "./errors.js";
 
 const backend: DesignBackend = new PlaywrightBackend();
 
+const SERVER_INSTRUCTIONS = [
+  "Use this server when the user asks to create, generate, iterate, inspect, export, publish, or set the default for Claude Design design systems at claude.ai/design.",
+  "Generation is asynchronous: after create_design_system, call generate, then poll get_status until it returns ready before reading or exporting files.",
+  "read_file returns raw generated file contents; export writes every generated file to a local directory and returns a summary only.",
+  "If a tool reports RECON_REQUIRED or SELECTOR_MISSING, the Claude Design UI/API changed or M0 recon has not been completed; run the recon scripts and update src/selectors.ts.",
+].join("\n");
+
 // ---- Tool schemas ----
 const CreateSchema = z.object({
   name: z.string().min(1),
@@ -73,6 +80,7 @@ const tools = [
   {
     name: "read_file",
     description: "Read a single generated file by its path within the project.",
+    _meta: { "anthropic/maxResultSizeChars": 500000 },
     inputSchema: {
       type: "object",
       properties: { projectId: { type: "string" }, path: { type: "string" } },
@@ -107,7 +115,7 @@ const tools = [
 
 const server = new Server(
   { name: "claude-design-mcp", version: "0.1.0" },
-  { capabilities: { tools: {} } },
+  { capabilities: { tools: {} }, instructions: SERVER_INSTRUCTIONS },
 );
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));

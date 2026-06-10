@@ -5,27 +5,25 @@
  * Run:
  *   pnpm run recon:capture
  *
- * It opens a HEADED browser using the persistent profile you logged into via
- * `auth:bootstrap`. A small overlay tells you what to do. We tee network into:
+ * Opens a HEADED browser using the persistent profile from `auth:bootstrap`.
+ * Capture ends when you CLOSE THE BROWSER WINDOW. Streams to:
  *   - recon/network.jsonl        (one JSON record per request/response)
  *   - recon/websocket.jsonl      (WS frames, both directions)
  *   - recon/console.log          (page console output)
  *
- * Privacy: cookies are NOT logged. Authorization headers ARE captured because
- * we need them for the API backend; the file is gitignored.
+ * Privacy: Cookie request headers are redacted. Authorization headers ARE
+ * captured (we need them for the API backend); recon/ is gitignored.
  */
 import { chromium, type Request, type Response, type WebSocket } from "playwright";
 import fs from "node:fs/promises";
-import { createWriteStream, WriteStream } from "node:fs";
+import { createWriteStream, type WriteStream } from "node:fs";
 import path from "node:path";
 
 const PROFILE_DIR = path.resolve(process.env.CLAUDE_DESIGN_PROFILE_DIR ?? "./.auth/profile");
 const BASE = process.env.CLAUDE_DESIGN_BASE_URL ?? "https://claude.ai/design";
 const OUT_DIR = path.resolve("./recon");
 
-function ts() {
-  return new Date().toISOString();
-}
+function ts() { return new Date().toISOString(); }
 
 function safeHeaders(h: Record<string, string>): Record<string, string> {
   const out: Record<string, string> = {};
@@ -47,6 +45,9 @@ async function main() {
     viewport: { width: 1440, height: 900 },
   });
 
+  let closed = false;
+  ctx.on("close", () => { closed = true; });
+
   ctx.on("request", (req: Request) => {
     netStream.write(JSON.stringify({
       t: ts(), kind: "request",
@@ -54,7 +55,7 @@ async function main() {
       url: req.url(),
       resourceType: req.resourceType(),
       headers: safeHeaders(req.headers()),
-      postData: req.postData()?.slice(0, 10_000) ?? null,
+      postData: req.postData()?.slice(0, 20_000) ?? null,
     }) + "\n");
   });
 
@@ -62,9 +63,9 @@ async function main() {
     let bodyPreview: string | null = null;
     try {
       const ct = (res.headers()["content-type"] ?? "").toLowerCase();
-      if (ct.includes("json") || ct.includes("text") || ct.includes("javascript")) {
+      if (ct.includes("json") || ct.includes("text") || ct.includes("event-stream") || ct.includes("javascript")) {
         const buf = await res.body();
-        bodyPreview = buf.toString("utf8").slice(0, 20_000);
+        bodyPreview = buf.toString("utf8").slice(0, 40_000);
       }
     } catch { /* ignore */ }
     netStream.write(JSON.stringify({
@@ -82,49 +83,51 @@ async function main() {
     });
     page.on("websocket", (ws: WebSocket) => {
       wsStream.write(JSON.stringify({ t: ts(), kind: "ws_open", url: ws.url() }) + "\n");
-      ws.on("framesent", (f) => wsStream.write(JSON.stringify({ t: ts(), kind: "ws_send", url: ws.url(), payload: String(f.payload).slice(0, 10_000) }) + "\n"));
-      ws.on("framereceived", (f) => wsStream.write(JSON.stringify({ t: ts(), kind: "ws_recv", url: ws.url(), payload: String(f.payload).slice(0, 10_000) }) + "\n"));
+      ws.on("framesent", (f) => wsStream.write(JSON.stringify({ t: ts(), kind: "ws_send", url: ws.url(), payload: String(f.payload).slice(0, 20_000) }) + "\n"));
+      ws.on("framereceived", (f) => wsStream.write(JSON.stringify({ t: ts(), kind: "ws_recv", url: ws.url(), payload: String(f.payload).slice(0, 20_000) }) + "\n"));
       ws.on("close", () => wsStream.write(JSON.stringify({ t: ts(), kind: "ws_close", url: ws.url() }) + "\n"));
     });
   });
 
   const page = ctx.pages()[0] ?? (await ctx.newPage());
-  await page.goto(BASE, { waitUntil: "domcontentloaded" });
+  await page.goto(BASE, { waitUntil: "domcontentloaded" }).catch(() => {});
   if (/\/(login|auth)/.test(page.url())) {
-    console.error("[recon] ❌ Not authenticated. Run `pnpm run auth:bootstrap` first.");
-    await ctx.close();
+    console.error("[recon] ❌ not authenticated. Run `pnpm run auth:bootstrap` first.");
+    try { await ctx.close(); } catch { /* ignore */ }
     process.exit(1);
   }
 
   console.log("");
   console.log("================ RECON CAPTURE ACTIVE ================");
-  console.log(" Drive the full flow yourself in the opened browser:");
-  console.log("   1. Create a NEW design project (give it a name + brief)");
+  console.log(" Drive the full flow in the opened browser:");
+  console.log("   1. Create a NEW design project (name + brief)");
   console.log("   2. Press Generate; wait until ready (~5 min)");
   console.log("   3. Open the Files tab; click a few files");
   console.log("   4. Send ONE chat iteration message; wait for verifier");
   console.log("   5. Publish; set as default");
-  console.log(" When done, press ENTER here to stop capture & write RECON.md.");
+  console.log(" CLOSE the browser window when done — capture ends automatically.");
   console.log("======================================================");
+  console.log("");
 
-  await waitForEnter();
+  // Wait for browser close
+  while (!closed) {
+    await sleep(1000);
+  }
 
   netStream.end();
   wsStream.end();
   conStream.end();
-  await ctx.close();
 
+  // Give streams a tick to flush
+  await sleep(200);
+
+  console.log("");
   console.log(`[recon] wrote ${path.join(OUT_DIR, "network.jsonl")}`);
   console.log(`[recon] wrote ${path.join(OUT_DIR, "websocket.jsonl")}`);
   console.log(`[recon] wrote ${path.join(OUT_DIR, "console.log")}`);
-  console.log(`[recon] next: inspect those files, then run \`pnpm run recon:summarize\` (or hand them to Claude).`);
+  console.log(`[recon] next: I'll read these and fill RECON.md.`);
 }
 
-function waitForEnter(): Promise<void> {
-  return new Promise((resolve) => {
-    process.stdin.resume();
-    process.stdin.once("data", () => { process.stdin.pause(); resolve(); });
-  });
-}
+function sleep(ms: number) { return new Promise((r) => setTimeout(r, ms)); }
 
 main().catch((e) => { console.error(e); process.exit(1); });
