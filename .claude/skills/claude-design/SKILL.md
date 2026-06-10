@@ -24,7 +24,7 @@ Every tool drives a logged-in Chrome. If a tool returns `NOT_AUTHED` (or anythin
 mentions login), the CDP Chrome isn't signed into claude.ai. Tell the user to run, once:
 
 ```bash
-cd ~/repos/mcp-servers/claude-design-mcp && pnpm run chrome:cdp
+cd <claude-design-mcp repo> && pnpm run chrome:cdp
 ```
 
 …then log into claude.ai in the window that opens. The session persists, so this is a
@@ -47,7 +47,7 @@ that burns turns. Two options:
   exits, so you're woken exactly when generation settles — no polling in between:
 
   ```bash
-  cd ~/repos/mcp-servers/claude-design-mcp && \
+  cd <claude-design-mcp repo> && \
     pnpm run watch:status -- --project <projectId>
   ```
 

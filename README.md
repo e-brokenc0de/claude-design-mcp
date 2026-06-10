@@ -2,10 +2,17 @@
 
 An MCP server that drives [Claude Design](https://claude.ai/design) — Anthropic's design-system generator — from agentic coding CLIs (Claude Code, Cursor, etc.). It exposes semantic tools so you can `create_design_system`, `generate`, `iterate`, `list_files`, `read_file`, and `export` without touching a browser.
 
-> **Status:** working. All ten tools are implemented. Eight call Claude Design's
-> internal `OmeletteService` Connect-RPC API as JSON (via in-page `fetch`);
+> [!WARNING]
+> **Unofficial — not affiliated with or endorsed by Anthropic.** Claude Design has no
+> public API, so this drives a real Chrome and calls claude.ai's internal endpoints.
+> Expect it to break when the site changes. Point it only at your own account, stay
+> within [Anthropic's terms](https://www.anthropic.com/legal/consumer-terms), and use
+> it at your own risk. Your logged-in session is sensitive — see [SECURITY.md](./SECURITY.md).
+
+> **Status:** working. ~30 tools implemented (see the table below). Most call Claude
+> Design's internal `OmeletteService` Connect-RPC API as JSON (via in-page `fetch`);
 > `generate`/`iterate`/`get_status` drive the chat UI (the `Chat` RPC payload is
-> opaque). See `RECON.md` for the full API map.
+> opaque).
 
 ## Tools
 
@@ -16,7 +23,7 @@ An MCP server that drives [Claude Design](https://claude.ai/design) — Anthropi
 | `create_design_project({ name, brief?, designSystemIds?, designComponents? })` | Create a design PROJECT (screens/app), optionally binding design systems. |
 | `generate({ projectId })` | Start generation from the stored brief. Returns once started (~5 min total). |
 | `get_status({ projectId })` | Poll: `generating` \| `ready` \| `error` \| `draft`. |
-| `iterate({ projectId, prompt })` | Send a chat message; waits for the self-verifier to settle. |
+| `iterate({ projectId, prompt })` | Send a chat message. Non-blocking — returns once started; poll `get_status`. |
 | `send_message({ projectId, prompt, conversationId? })` | Revise/prompt; optionally target a specific conversation. |
 
 **Design-system bindings**
@@ -55,12 +62,18 @@ An MCP server that drives [Claude Design](https://claude.ai/design) — Anthropi
 
 ## Setup
 
+**Prerequisites:** Node ≥ 20, [pnpm](https://pnpm.io), and a desktop
+**Google Chrome** installed. A claude.ai account with Claude Design access.
+
 claude.ai is behind Cloudflare, which blocks Playwright's bundled Chromium
 (automation fingerprint) with an endless "Just a moment…" loop. The server
 sidesteps this by attaching to a **real Chrome** over the Chrome DevTools
 Protocol (CDP) — a normally-launched Chrome passes Cloudflare cleanly.
 
 ```bash
+git clone https://github.com/e-brokenc0de/claude-design-mcp.git
+cd claude-design-mcp
+
 pnpm install
 pnpm exec playwright install chromium   # only the Node bindings are needed
 
@@ -68,12 +81,13 @@ pnpm exec playwright install chromium   # only the Node bindings are needed
 # into claude.ai once. The window stays open; the session persists.
 pnpm run chrome:cdp
 
-# M0 recon: drive the full flow in that Chrome window while we tee every
-# HTTP + WebSocket call into ./recon/ over CDP.
-pnpm run recon:capture
-
 pnpm run build
 ```
+
+> Dev-only: `pnpm run recon:capture` tees Claude Design's network/RPC traffic into
+> `./recon/` so you can re-map the internal API in `src/selectors.ts` if the site
+> changes. Not needed for normal use. Captures can contain cookies — they're
+> gitignored; never commit them.
 
 The MCP server attaches to the same Chrome (port 9222 by default). If Chrome
 isn't running, the server auto-launches it; if it's not logged in, tools return
@@ -127,4 +141,14 @@ Once recon captures Claude Design's internal API, tool bodies wire to in-page
 ## Secrets
 
 `./.auth/` (the Chrome debug profile, holding your logged-in session) and any
-captures in `./recon/` are gitignored. Never commit them.
+captures in `./recon/` are gitignored. Never commit them. See
+[SECURITY.md](./SECURITY.md) for the full list and reporting policy.
+
+## Contributing
+
+Issues and PRs welcome. See [CONTRIBUTING.md](./CONTRIBUTING.md) for dev setup and
+the one rule that matters: when claude.ai changes, fix `src/selectors.ts` first.
+
+## License
+
+[MIT](./LICENSE) © Brokenc0de. Unofficial; not affiliated with Anthropic.

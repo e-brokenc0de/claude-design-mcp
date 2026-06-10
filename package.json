@@ -10,12 +10,26 @@
   "files": [
     "dist",
     "README.md",
+    "LICENSE",
     ".mcp.json"
   ],
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/e-brokenc0de/claude-design-mcp.git"
+  },
+  "homepage": "https://github.com/e-brokenc0de/claude-design-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/e-brokenc0de/claude-design-mcp/issues"
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit",
     "start": "node dist/server.js",
+    "prepublishOnly": "pnpm run build",
     "chrome:cdp": "tsx scripts/chrome-cdp.ts",
     "recon:capture": "tsx scripts/recon-capture.ts",
     "scaffold:ui": "tsx scripts/scaffold-ui.ts",

@@ -62,7 +62,7 @@ are UUIDs returned by create/list tools.
 
 ## Companion CLI scripts (run from the server repo)
 
-Not MCP tools — run with `pnpm run …` in `~/repos/mcp-servers/claude-design-mcp`.
+Not MCP tools — run with `pnpm run …` in the `claude-design-mcp` server repo.
 
 | Script | Purpose |
 |---|---|
