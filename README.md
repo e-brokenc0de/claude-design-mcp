@@ -9,18 +9,47 @@ An MCP server that drives [Claude Design](https://claude.ai/design) — Anthropi
 
 ## Tools
 
+**Create & generate**
 | Tool | Purpose |
 |---|---|
-| `create_design_system({ name, brief, sources? })` | Create a new project. Returns `{ projectId, url }`. |
-| `generate({ projectId })` | Start generation. Returns immediately; generation takes ~5 min. |
+| `create_design_system({ name, brief, sources? })` | Create a design system. Returns `{ projectId, url }`. |
+| `create_design_project({ name, brief?, designSystemIds?, designComponents? })` | Create a design PROJECT (screens/app), optionally binding design systems. |
+| `generate({ projectId })` | Start generation from the stored brief. Returns once started (~5 min total). |
 | `get_status({ projectId })` | Poll: `generating` \| `ready` \| `error` \| `draft`. |
 | `iterate({ projectId, prompt })` | Send a chat message; waits for the self-verifier to settle. |
-| `list_files({ projectId })` | List generated files (`tokens/*.css`, `components/*`, `SKILL.md`, …). |
-| `read_file({ projectId, path })` | Read a single generated file. |
-| `export({ projectId, destDir })` | Dump all files to `destDir`, preserving structure. |
-| `publish({ projectId })` | Publish the design system. |
-| `set_default({ projectId })` | Set as the default Claude Design system. |
-| `list_design_systems()` | List known projects. |
+| `send_message({ projectId, prompt, conversationId? })` | Revise/prompt; optionally target a specific conversation. |
+
+**Design-system bindings**
+| Tool | Purpose |
+|---|---|
+| `attach_design_system({ projectId, designSystemId })` | Bind a (published) design system to a project. |
+| `detach_design_system({ projectId, designSystemId })` | Unbind a design system. |
+| `list_attached_design_systems({ projectId })` | List bound systems (with names). |
+| `refresh_design_system({ projectId, designSystemId? })` | Pull the latest version of bound system(s). |
+
+**Conversations**
+| Tool | Purpose |
+|---|---|
+| `list_conversations({ projectId })` | List chats: `{ chatId, title, turns, active }`. |
+| `new_conversation({ projectId })` | Start a fresh conversation. |
+
+**Files**
+| Tool | Purpose |
+|---|---|
+| `list_files({ projectId })` | List files (`tokens/*.css`, `components/*`, `SKILL.md`, …). |
+| `read_file({ projectId, path })` | Read a single file (utf8). |
+| `export({ projectId, destDir })` | Dump all files to `destDir`, byte-faithful. |
+| `search_files({ projectId, pattern })` | Grep files → `{ path, line, context }`. |
+| `write_file` / `edit_file` / `delete_file` | Direct file edits without chat. |
+
+**Publish, listing & management**
+| Tool | Purpose |
+|---|---|
+| `publish({ projectId })` / `set_default({ projectId })` | Publish / set default design system. |
+| `list_design_systems()` / `list_projects()` | List design systems / all projects. |
+| `rename_project` / `delete_project` / `duplicate_project` / `remix_project` / `set_favorite` | Project housekeeping. |
+| `get_usage()` | Account usage/quota (5-hour & 7-day). |
+| `create_claude_code_session({ projectId, instructions? })` | Open the project as a Claude Code session → `{ sessionUrl }`. |
 
 ## Setup
 
