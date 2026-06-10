@@ -8,11 +8,20 @@ import {
 import fs from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-import { PlaywrightBackend } from "./backends/playwright.js";
+import { CdpBackend } from "./backends/cdp.js";
 import type { DesignBackend } from "./backend.js";
 import { DesignError } from "./errors.js";
 
-const backend: DesignBackend = new PlaywrightBackend();
+const backend: DesignBackend = new CdpBackend();
+let backendInit: Promise<void> | null = null;
+let backendStarted = false;
+
+async function ensureBackend(): Promise<void> {
+  if (!backendInit) {
+    backendInit = backend.init().then(() => { backendStarted = true; });
+  }
+  await backendInit;
+}
 
 const SERVER_INSTRUCTIONS = [
   "Use this server when the user asks to create, generate, iterate, inspect, export, publish, or set the default for Claude Design design systems at claude.ai/design.",
@@ -123,6 +132,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
 server.setRequestHandler(CallToolRequestSchema, async (req) => {
   const { name, arguments: rawArgs = {} } = req.params;
   try {
+    await ensureBackend();
     switch (name) {
       case "create_design_system": {
         const a = CreateSchema.parse(rawArgs);
@@ -197,11 +207,12 @@ function errText(s: string) {
 }
 
 async function main() {
-  await backend.init();
   const transport = new StdioServerTransport();
   await server.connect(transport);
   const cleanup = async () => {
-    try { await backend.shutdown(); } catch { /* ignore */ }
+    if (backendStarted) {
+      try { await backend.shutdown(); } catch { /* ignore */ }
+    }
     process.exit(0);
   };
   process.on("SIGINT", cleanup);

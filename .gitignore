@@ -19,3 +19,4 @@ recon/*.jsonl
 
 # Project state cache
 .claude-design-mcp/
+recon/*.bin

@@ -1,12 +1,15 @@
 {
   "mcpServers": {
     "claude-design": {
+      "type": "stdio",
       "command": "node",
-      "args": ["./dist/server.js"],
+      "args": ["${CLAUDE_PROJECT_DIR:-.}/dist/server.js"],
       "env": {
-        "CLAUDE_DESIGN_PROFILE_DIR": "./.auth/profile",
-        "CLAUDE_DESIGN_STATE_DIR": "./.claude-design-mcp"
-      }
+        "CLAUDE_DESIGN_CDP_PORT": "9222",
+        "CLAUDE_DESIGN_CDP_USER_DATA_DIR": "${CLAUDE_PROJECT_DIR:-.}/.auth/cdp-chrome",
+        "CLAUDE_DESIGN_STATE_DIR": "${CLAUDE_PROJECT_DIR:-.}/.claude-design-mcp"
+      },
+      "timeout": 600000
     }
   }
 }

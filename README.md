@@ -21,23 +21,29 @@ An MCP server that drives [Claude Design](https://claude.ai/design) — Anthropi
 
 ## Setup
 
+claude.ai is behind Cloudflare, which blocks Playwright's bundled Chromium
+(automation fingerprint) with an endless "Just a moment…" loop. The server
+sidesteps this by attaching to a **real Chrome** over the Chrome DevTools
+Protocol (CDP) — a normally-launched Chrome passes Cloudflare cleanly.
+
 ```bash
 pnpm install
-pnpm exec playwright install chromium
+pnpm exec playwright install chromium   # only the Node bindings are needed
 
-# Option A (recommended when Cloudflare blocks Playwright's bundled browser):
-# reuse your real Google Chrome Default profile/cookies. Close regular Chrome first.
-CLAUDE_DESIGN_USE_SYSTEM_CHROME=1 pnpm run auth:bootstrap
+# Start the real Chrome (dedicated debug profile in .auth/cdp-chrome) and log
+# into claude.ai once. The window stays open; the session persists.
+pnpm run chrome:cdp
 
-# Option B: dedicated Chromium profile. You log into claude.ai once; reused headless after.
-pnpm run auth:bootstrap
-
-# M0 recon: drive the full flow yourself in a headed browser while we tee
-# every HTTP + WebSocket call into ./recon/. If using system Chrome, keep env set.
-CLAUDE_DESIGN_USE_SYSTEM_CHROME=1 pnpm run recon:capture
+# M0 recon: drive the full flow in that Chrome window while we tee every
+# HTTP + WebSocket call into ./recon/ over CDP.
+pnpm run recon:capture
 
 pnpm run build
 ```
+
+The MCP server attaches to the same Chrome (port 9222 by default). If Chrome
+isn't running, the server auto-launches it; if it's not logged in, tools return
+`NOT_AUTHED` — run `pnpm run chrome:cdp` and log in.
 
 ## Registering with Claude Code / Cursor
 
@@ -58,13 +64,16 @@ Copy `.mcp.json` into your project, or add an entry to your existing MCP config:
 
 - **`src/server.ts`** — MCP stdio server; thin tool dispatcher.
 - **`src/backend.ts`** — `DesignBackend` interface (the contract every backend implements).
-- **`src/backends/playwright.ts`** — Playwright backend; long-lived persistent context so generations survive across tool calls.
+- **`src/browser.ts`** — CDP acquisition: spawn/reuse real Chrome with a debug port, attach over CDP, find the design tab.
+- **`src/backends/cdp.ts`** — CDP-attached backend; reattaches per call so generations survive across tool calls.
 - **`src/selectors.ts`** — ⚠️ THE ONLY PLACE selectors and endpoint patterns live. UI shifts? Edit this one file.
 - **`src/registry.ts`** — Persists `projectId → { url, name }` across stdio invocations.
 - **`src/config.ts`** / **`src/errors.ts`** — env-driven config + structured loud errors.
 
-A future `src/backends/api.ts` will implement the same interface against the captured HTTP/WebSocket API once recon lands.
+Once recon captures Claude Design's internal API, tool bodies wire to in-page
+`fetch` (preferred) or DOM interaction, both centralized via `src/selectors.ts`.
 
 ## Secrets
 
-`./.auth/profile` (persistent Chromium profile) and any HARs in `./recon/` are gitignored. Never commit them.
+`./.auth/` (the Chrome debug profile, holding your logged-in session) and any
+captures in `./recon/` are gitignored. Never commit them.
