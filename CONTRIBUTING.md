@@ -37,13 +37,19 @@ pnpm run build
 | Path | What it does |
 |---|---|
 | `src/server.ts` | The MCP stdio server. Zod schemas + handlers, thin dispatch. |
+| `src/cli.ts` | The `claude-design` CLI — a thin MCP client over `server.ts`. |
 | `src/backend.ts` | The `DesignBackend` interface every backend implements. |
 | `src/backends/cdp.ts` | The CDP backend — where the actual tool logic lives. |
 | `src/browser.ts` | Spawns/reuses Chrome, attaches over CDP, finds the design tab. |
 | `src/selectors.ts` | Every DOM selector and RPC endpoint pattern. See below. |
 | `src/registry.ts` | Caches `projectId → { url, name }` between stdio calls. |
 | `src/config.ts`, `src/errors.ts` | Config from env, structured errors. |
-| `scripts/` | The CLI helpers (`chrome:cdp`, `recon:capture`, `scaffold:ui`, `watch:status`). |
+| `src/lib/` | Shared logic for `chrome` / `scaffold` / `watch`, used by both `scripts/*` and the CLI. |
+| `scripts/` | Thin `pnpm run` shims (`chrome:cdp`, `recon:capture`, `scaffold:ui`, `watch:status`) over `src/lib/`. |
+
+The CLI doesn't re-declare any tool — it discovers them from the server at runtime. So
+adding a tool to `server.ts` makes it appear in `claude-design` automatically; you never
+touch `cli.ts`. Keep it that way.
 
 The one thing to internalize: **selectors and endpoints only live in `src/selectors.ts`.** When the site changes and something breaks, look there first, and keep new selectors there too. Scattering them across the backend is how this kind of project rots.
 

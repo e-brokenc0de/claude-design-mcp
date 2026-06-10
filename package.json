@@ -5,7 +5,8 @@
   "type": "module",
   "main": "dist/server.js",
   "bin": {
-    "claude-design-mcp": "dist/server.js"
+    "claude-design-mcp": "dist/server.js",
+    "claude-design": "dist/cli.js"
   },
   "files": [
     "dist",

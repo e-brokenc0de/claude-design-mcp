@@ -60,6 +60,15 @@ are UUIDs returned by create/list tools.
 | `get_usage` | `{}` | `{ fiveHour, sevenDay, extraUsage }` quota windows. |
 | `create_claude_code_session` | `{ projectId, instructions? }` | `{ sessionId, sessionUrl }` — continue the project in Claude Code. |
 
+## `claude-design` CLI (alternative to MCP)
+
+Every tool is also a terminal command via `claude-design <command> [flags]` — a thin MCP
+client over the same server (so it stays in sync automatically). Useful for scripting/CI
+or quick checks outside an agent: `claude-design list-projects --json`,
+`claude-design get-status --project-id <id>`, `claude-design --help`. Flags mirror tool
+args in kebab-case (`projectId` → `--project-id`); `--json` for machine output; exit `2`
+on `NOT_AUTHED`. The scripts below are also CLI subcommands (`claude-design chrome|scaffold|watch`).
+
 ## Companion CLI scripts (run from the server repo)
 
 Not MCP tools — run with `pnpm run …` in the `claude-design-mcp` server repo.

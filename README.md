@@ -93,6 +93,36 @@ The MCP server attaches to the same Chrome (port 9222 by default). If Chrome
 isn't running, the server auto-launches it; if it's not logged in, tools return
 `NOT_AUTHED` — run `pnpm run chrome:cdp` and log in.
 
+## CLI
+
+Every tool is also a terminal command via `claude-design`. The CLI is a thin **MCP
+client** — it spawns the same server and forwards your arguments, so the commands,
+schemas, and output are exactly the server's (add a tool to the server and it shows up
+here automatically). Good for automation/CI, quick debugging, and one-off ops without
+an agent in the loop.
+
+```bash
+claude-design --help                  # list every command (discovered from the server)
+claude-design <command> --help        # flags for one command
+claude-design list-projects --json    # data tools print JSON → pipe to jq
+claude-design create-design-system --name "Acme" --brief "Calm, editorial, dark-first"
+claude-design get-status --project-id <id>
+```
+
+- Command names accept kebab- or snake_case (`create-design-system` == `create_design_system`).
+- Flags mirror each tool's arguments in kebab-case (`projectId` → `--project-id`); array
+  args repeat (`--design-system-ids a --design-system-ids b`); booleans are presence flags.
+- `--json` guarantees machine-readable stdout. Exit codes: `0` ok, `1` error, `2` `NOT_AUTHED`.
+- Same prerequisites as the server: a logged-in Chrome (`claude-design chrome`), and
+  generation is async — kick off `generate`/`iterate`, then `claude-design watch --project <id>`.
+
+The dev scripts are folded in as subcommands too: `claude-design chrome` (auth),
+`claude-design scaffold` (export → `packages/ui`), `claude-design watch` (block until a
+generation settles). They're equivalent to the matching `pnpm run` scripts.
+
+Run it without installing globally via `npx claude-design …`, or `node dist/cli.js …`
+from a clone.
+
 ## Scaffold a `packages/ui` from an export
 
 Turn a Claude Design export (the `project/` folder of a handoff bundle, or a plain
