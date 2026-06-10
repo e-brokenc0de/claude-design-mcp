@@ -81,7 +81,8 @@ export interface DesignBackend {
 
   // --- conversations ---
   listConversations(projectId: string): Promise<Conversation[]>;
-  newConversation(projectId: string): Promise<void>;
+  /** Start a fresh conversation; returns its chatId. */
+  newConversation(projectId: string): Promise<string>;
 
   // --- design system bindings ---
   attachDesignSystem(projectId: string, designSystemId: string): Promise<DesignSystemBinding[]>;

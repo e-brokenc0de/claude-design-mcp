@@ -279,27 +279,27 @@ export class CdpBackend implements DesignBackend {
     await page.waitForTimeout(1500);
   }
 
-  async newConversation(projectId: string): Promise<void> {
-    const page = await this.projectPage(projectId);
-    // Prefer the UI's "New chat" affordance; fall back to a fresh blob entry.
-    const clicked = await this.clickNewChat(page);
-    if (clicked) return;
+  /**
+   * Start a fresh conversation by adding an empty chat to the project data blob
+   * and making it active, then reload the page to it. Deterministic (we control
+   * the id) and returns that id so callers can target it with send_message.
+   * The first send_message populates it server-side.
+   */
+  async newConversation(projectId: string): Promise<string> {
     const data = await this.getProjectData(projectId);
-    const id = cryptoRandomId();
-    const nowChat = { id, title: "New chat", created: new Date(0).toISOString(), messages: [] };
-    data.chats = { ...(data.chats ?? {}), [id]: nowChat };
+    const id = randomUUID();
+    const nowIso = new Date().toISOString();
+    data.chats = {
+      ...(data.chats ?? {}),
+      [id]: { id, title: "New chat", created: nowIso, lastOpened: nowIso, messages: [] },
+    };
     data.viewState = { ...(data.viewState ?? {}), activeChatId: id };
     await this.putProjectData(projectId, data);
+    const page = await this.projectPage(projectId);
     await page.reload({ waitUntil: "domcontentloaded" });
     await this.waitForCloudflare(page);
-  }
-
-  private async clickNewChat(page: Page): Promise<boolean> {
-    try {
-      const trigger = page.getByRole("button", { name: /new chat/i }).first();
-      if ((await trigger.count()) > 0) { await trigger.click(); return true; }
-    } catch { /* fall through */ }
-    return false;
+    await page.waitForTimeout(1000);
+    return id;
   }
 
   async sendMessageTool(projectId: string, prompt: string, conversationId?: string): Promise<void> {
@@ -557,10 +557,6 @@ export class CdpBackend implements DesignBackend {
       ...(instructions ? { instructions } : {}),
     });
   }
-}
-
-function cryptoRandomId(): string {
-  return randomUUID();
 }
 
 export function extractIdFromUrl(href: string): string {

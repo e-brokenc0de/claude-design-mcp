@@ -427,8 +427,8 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
       }
       case "new_conversation": {
         const a = ProjectIdSchema.parse(rawArgs);
-        await backend.newConversation(a.projectId);
-        return text("new_conversation_started");
+        const chatId = await backend.newConversation(a.projectId);
+        return text(JSON.stringify({ chatId }));
       }
       case "send_message": {
         const a = SendMessageSchema.parse(rawArgs);
